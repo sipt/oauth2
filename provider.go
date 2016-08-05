@@ -31,7 +31,7 @@ type (
 		// scope. Upon success Authorize should return the authorization code and a nil
 		// error. Upon failure the error should implement Error otherwise a generic error
 		// HTTP response is sent back to the client.
-		Authorize(clientID, scope, redirectURI string) (code string, err error)
+		Authorize(clientID, scope string) (code string, err error)
 
 		// Exchange implements https://tools.ietf.org/html/rfc6749#section-4.1.3 It must
 		// check that the given authorization code was generated for the client with the
@@ -39,14 +39,14 @@ type (
 		// URI. Upon success it should return a refresh and access token pair as well as an
 		// optional expiration deadline in seconds. Upon failure the error should implement
 		// Error otherwise a generic error HTTP response is sent back to the client.
-		Exchange(clientID, code, redirectURI string) (refreshToken, accessToken string, expiresIn int, err error)
+		Exchange(clientID, code string) (refreshToken, accessToken string, expiresIn int, err error)
 
 		// Refresh implements https://tools.ietf.org/html/rfc6749#section-6
 		// It must check that the given refresh token and scope are valid.  Upon success it
 		// should return a valid access token and optionally a new refresh token and
 		// expiration deadline in seconds. Upon failure the error should implement Error
 		// otherwise a generic error HTTP response is sent back to the client.
-		Refresh(refreshToken, scope string) (newRefreshToken, accessToken string, expiresIn int, err error)
+		Refresh(refreshToken string) (newRefreshToken, accessToken string, expiresIn int, err error)
 
 		// Authenticate performs client authentication as described in
 		// https://tools.ietf.org/html/rfc6749#section-2.3
@@ -121,7 +121,7 @@ func (c *ProviderController) Authorize(ctx context.Context, rw http.ResponseWrit
 	}
 
 	// Retrieve auth code
-	code, err := c.provider.Authorize(clientID, scope, redirectURI)
+	code, err := c.provider.Authorize(clientID, scope)
 	if err != nil {
 		return c.Service.Send(ctx, http.StatusBadRequest, errorToMedia(err))
 	}
@@ -143,19 +143,19 @@ func (c *ProviderController) Authorize(ctx context.Context, rw http.ResponseWrit
 
 // GetToken runs the get_token action.
 func (c *ProviderController) GetToken(ctx context.Context, rw http.ResponseWriter, grantType string,
-	code, redirectURI, refreshToken, scope *string) error {
+	code, refreshToken *string) error {
 
 	if grantType == "authorization_code" {
-		return c.exchange(ctx, rw, code, redirectURI)
+		return c.exchange(ctx, rw, code)
 	}
 	if grantType == "refresh_token" {
-		return c.refresh(ctx, rw, refreshToken, scope)
+		return c.refresh(ctx, rw, refreshToken)
 	}
 	return c.Service.Send(ctx, http.StatusBadRequest, InvalidGrantType)
 }
 
 // exchange returns a pair of refresh and access tokens from an authorization code.
-func (c *ProviderController) exchange(ctx context.Context, rw http.ResponseWriter, code, redirectURI *string) error {
+func (c *ProviderController) exchange(ctx context.Context, rw http.ResponseWriter, code *string) error {
 	// Ensure there is a client identifier
 	clientID := ContextClientID(ctx)
 	if clientID == "" {
@@ -167,19 +167,8 @@ func (c *ProviderController) exchange(ctx context.Context, rw http.ResponseWrite
 		return c.Service.Send(ctx, http.StatusBadRequest, MissingCode)
 	}
 
-	// Ensure there is a redirect URI
-	if redirectURI == nil {
-		return c.Service.Send(ctx, http.StatusBadRequest, MissingRedirect)
-	}
-
-	// Validate redirect URI
-	u, err := url.Parse(*redirectURI)
-	if err != nil || u.Scheme == "" || u.Host == "" {
-		return c.Service.Send(ctx, http.StatusBadRequest, InvalidRedirect)
-	}
-
 	// Retrieve tokens code
-	refreshToken, accessToken, expiresIn, err := c.provider.Exchange(clientID, *code, *redirectURI)
+	refreshToken, accessToken, expiresIn, err := c.provider.Exchange(clientID, *code)
 	if err != nil {
 		return c.Service.Send(ctx, http.StatusBadRequest, errorToMedia(err))
 	}
@@ -201,18 +190,12 @@ func (c *ProviderController) exchange(ctx context.Context, rw http.ResponseWrite
 }
 
 // refresh refreshes an access token given a refresh token.
-func (c *ProviderController) refresh(ctx context.Context, rw http.ResponseWriter, refreshToken, scope *string) error {
+func (c *ProviderController) refresh(ctx context.Context, rw http.ResponseWriter, refreshToken *string) error {
 	// Ensure there is a refresh token
 	if refreshToken == nil {
 		return c.Service.Send(ctx, http.StatusBadRequest, MissingRefreshToken)
 	}
-
-	// Retrieve tokens
-	var s string
-	if scope != nil {
-		s = *scope
-	}
-	rToken, aToken, expiresIn, err := c.provider.Refresh(*refreshToken, s)
+	rToken, aToken, expiresIn, err := c.provider.Refresh(*refreshToken)
 	if err != nil {
 		return c.Service.Send(ctx, http.StatusBadRequest, errorToMedia(err))
 	}
@@ -226,9 +209,6 @@ func (c *ProviderController) refresh(ctx context.Context, rw http.ResponseWriter
 	}
 	if expiresIn != 0 {
 		m.ExpiresIn = &expiresIn
-	}
-	if scope != nil {
-		m.Scope = scope
 	}
 
 	rw.Header().Set("Content-Type", "application/json")

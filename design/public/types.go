@@ -22,11 +22,9 @@ Value MUST be set to "refresh_token" when refreshing an access token.`, func() {
 
 	// Initial refresh and access token request payload
 	Attribute("code", String, "The authorization code received from the authorization server, used for initial refresh and access token request")
-	Attribute("redirect_uri", String, "The redirect_uri parameter specified when making the authorize request to obtain the authorization code, used for initial refresh and access token request")
 
 	// Refresh token payload
 	Attribute("refresh_token", String, "The refresh token issued to the client, used for refreshing an access token")
-	Attribute("scope", String, "The scope of the access request, used for refreshing an access token")
 
 	Required("grant_type")
 })
